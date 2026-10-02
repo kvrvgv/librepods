@@ -54,7 +54,13 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
     shouldResume = primaryInEar || secondaryInEar;
   }
 
-  if (shouldPause && isActiveOutputDeviceAirPods())
+  // Ear status packets repeat while nothing changes. Pause only when a pod
+  // was just taken out, otherwise playback resumed by hand (e.g. listening
+  // with one pod) gets paused again on every packet
+  bool justRemoved = shouldPause && !m_wasPauseState;
+  m_wasPauseState = shouldPause;
+
+  if (justRemoved && isActiveOutputDeviceAirPods())
   {
     if (getCurrentMediaState() == Playing)
     {
@@ -267,23 +273,36 @@ void MediaController::applyAudioRoute() {
     }
     return;
   }
+  // Ear status packets repeat often; re-setting the profile the card already
+  // has makes PipeWire reopen the transport (audio gap, volume jump). Compare
+  // with the card itself: WirePlumber may switch it behind our back
+  QString active = m_pulseAudio->getActiveProfile(m_deviceOutputName);
+  if (active.isEmpty()) {
+    // Card went away (reconnect), look it up again
+    m_deviceOutputName.clear();
+    if (!m_cardRetryTimer->isActive() && m_cardRetries++ < 15)
+      m_cardRetryTimer->start();
+    return;
+  }
   m_cardRetryTimer->stop();
 
-  if (m_appliedRoute == (m_wantAudio ? 1 : 0))
+  bool isOn = active.startsWith("a2dp");
+  if (m_wantAudio == isOn)
     return;
-  m_appliedRoute = m_wantAudio ? 1 : 0;
 
   if (m_wantAudio)
     activateA2dpProfile();
   else
     removeAudioOutputDevice();
+
+  // Catch WirePlumber restoring the old profile right after us
+  QTimer::singleShot(3000, this, &MediaController::applyAudioRoute);
 }
 
 void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
   m_deviceOutputName = getAudioDeviceName();
   m_cachedA2dpProfile.clear();
-  m_appliedRoute = -1;
   LOG_INFO("Device output name set to: " << m_deviceOutputName);
 }
 

@@ -269,6 +269,10 @@ void MediaController::applyAudioRoute() {
   }
   m_cardRetryTimer->stop();
 
+  if (m_appliedRoute == (m_wantAudio ? 1 : 0))
+    return;
+  m_appliedRoute = m_wantAudio ? 1 : 0;
+
   if (m_wantAudio)
     activateA2dpProfile();
   else
@@ -279,6 +283,7 @@ void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
   m_deviceOutputName = getAudioDeviceName();
   m_cachedA2dpProfile.clear();
+  m_appliedRoute = -1;
   LOG_INFO("Device output name set to: " << m_deviceOutputName);
 }
 

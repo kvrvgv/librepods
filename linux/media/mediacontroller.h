@@ -73,6 +73,10 @@ private:
   // ear-detection decision is retried until the card exists
   bool m_wantAudio = true;
   int m_cardRetries = 0;
+  // Last route actually applied to the card (-1 unknown, 0 off, 1 A2DP).
+  // Ear status packets repeat often; re-setting the same profile makes
+  // PipeWire reopen the transport (audio gap, volume jump)
+  int m_appliedRoute = -1;
   QTimer *m_cardRetryTimer = nullptr;
 };
 

@@ -180,7 +180,9 @@ QString MediaController::getPreferredA2dpProfile() {
     return m_cachedA2dpProfile;
   }
 
-  QStringList profiles = {"a2dp-sink-sbc_xq", "a2dp-sink-sbc", "a2dp-sink"};
+  // Plain a2dp-sink first: it lets WirePlumber pick the codec (AAC on AirPods).
+  // Forcing an SBC variant asks the AirPods for a codec switch, which they refuse
+  QStringList profiles = {"a2dp-sink", "a2dp-sink-sbc_xq", "a2dp-sink-sbc"};
 
   for (const QString &profile : profiles) {
     if (m_pulseAudio->isProfileAvailable(m_deviceOutputName, profile)) {
@@ -213,18 +215,11 @@ void MediaController::activateA2dpProfile() {
     return;
   }
 
+  // Profiles show up a moment after the card; applyAudioRoute() re-checks
+  // later. Restarting WirePlumber here dropped the Bluetooth connection
   if (!isA2dpProfileAvailable()) {
-    LOG_WARN("A2DP profile not available, attempting to restart WirePlumber");
-    if (restartWirePlumber()) {
-      m_deviceOutputName = getAudioDeviceName();
-      if (!isA2dpProfileAvailable()) {
-        LOG_ERROR("A2DP profile still not available after WirePlumber restart");
-        return;
-      }
-    } else {
-      LOG_ERROR("Could not restart WirePlumber, A2DP profile unavailable");
-      return;
-    }
+    LOG_WARN("A2DP profile not available yet");
+    return;
   }
 
   QString preferredProfile = getPreferredA2dpProfile();

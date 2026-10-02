@@ -109,8 +109,8 @@ public:
                 {
                     QString formattedAddress = address.toString().replace(":", "_");
                     mediaController->setConnectedDeviceMacAddress(formattedAddress);
-                    mediaController->activateA2dpProfile();
-                    LOG_INFO("A2DP profile activation attempted for AirPods found on startup");
+                    mediaController->setAudioWanted(m_deviceInfo->getEarDetection()->oneOrMorePodsInEar());
+                    LOG_INFO("Audio route applied for AirPods found on startup");
                 });
                 return;
             }
@@ -508,8 +508,8 @@ private slots:
                 QString formattedAddress = address;
                 formattedAddress = formattedAddress.replace(":", "_");
                 mediaController->setConnectedDeviceMacAddress(formattedAddress);
-                mediaController->activateA2dpProfile();
-                LOG_INFO("A2DP profile activation attempted for newly connected device");
+                mediaController->setAudioWanted(m_deviceInfo->getEarDetection()->oneOrMorePodsInEar());
+                LOG_INFO("Audio route applied for newly connected device");
             }
         });
     }
@@ -909,6 +909,11 @@ private slots:
 public:
     void handleMediaStateChange(MediaController::MediaState state) {
         if (state == MediaController::MediaState::Playing) {
+            // Nothing to take over while the AirPods sit in the case or on the desk
+            if (!m_deviceInfo->getEarDetection()->oneOrMorePodsInEar()) {
+                LOG_DEBUG("Media started playing, but no AirPod is in ear, not taking over audio");
+                return;
+            }
             LOG_INFO("Media started playing, sending disconnect request to Android and taking over audio");
             sendDisconnectRequestToAndroid();
             connectToAirPods(true);
@@ -941,12 +946,15 @@ public:
         }
 
         if (force) {
+            // Without an address bluetoothctl drops into interactive mode and never exits
+            if (m_deviceInfo->bluetoothAddress().isEmpty()) {
+                LOG_WARN("AirPods address unknown, cannot force connection");
+                return;
+            }
+            // Don't block the event loop: the connection is picked up by BluetoothMonitor
             LOG_INFO("Forcing connection to AirPods");
-            QProcess process;
-            process.start("bluetoothctl", QStringList() << "connect" << m_deviceInfo->bluetoothAddress());
-            process.waitForFinished();
-            QString output = process.readAllStandardOutput().trimmed();
-            LOG_INFO("Bluetoothctl output: " << output);
+            QProcess::startDetached("bluetoothctl", QStringList() << "--timeout" << "15" << "connect" << m_deviceInfo->bluetoothAddress());
+            return;
         }
         QBluetoothLocalDevice localDevice;
         const QList<QBluetoothAddress> connectedDevices = localDevice.connectedDevices();

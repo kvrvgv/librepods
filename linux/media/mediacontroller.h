@@ -8,6 +8,7 @@ class QProcess;
 class EarDetection;
 class PlayerStatusWatcher;
 class QDBusInterface;
+class QTimer;
 
 class MediaController : public QObject
 {
@@ -37,6 +38,8 @@ public:
   void handleConversationalAwareness(const QByteArray &data);
   void activateA2dpProfile();
   void removeAudioOutputDevice();
+  // Route audio to the AirPods (A2DP) or away from them (profile off)
+  void setAudioWanted(bool want);
   void setConnectedDeviceMacAddress(const QString &macAddress);
   bool isA2dpProfileAvailable();
   QString getPreferredA2dpProfile();
@@ -55,6 +58,7 @@ Q_SIGNALS:
 private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output) const;
   QString getAudioDeviceName();
+  void applyAudioRoute();
   QStringList getPlayingMediaPlayers();
 
   QStringList pausedByAppServices;
@@ -65,6 +69,11 @@ private:
   PlayerStatusWatcher *playerStatusWatcher = nullptr;
   PulseAudioController *m_pulseAudio = nullptr;
   QString m_cachedA2dpProfile;
+  // The bluez card shows up a moment after the AirPods connect, so the
+  // ear-detection decision is retried until the card exists
+  bool m_wantAudio = true;
+  int m_cardRetries = 0;
+  QTimer *m_cardRetryTimer = nullptr;
 };
 
 #endif // MEDIACONTROLLER_H

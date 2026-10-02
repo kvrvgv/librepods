@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QProcess>
 #include <QThread>
+#include <QTimer>
 #include <QRegularExpression>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -17,6 +18,10 @@ MediaController::MediaController(QObject *parent) : QObject(parent) {
   {
     LOG_ERROR("Failed to initialize PulseAudio controller");
   }
+
+  m_cardRetryTimer = new QTimer(this);
+  m_cardRetryTimer->setInterval(1000);
+  connect(m_cardRetryTimer, &QTimer::timeout, this, &MediaController::applyAudioRoute);
 }
 
 void MediaController::handleEarDetection(EarDetection *earDetection)
@@ -62,7 +67,7 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
   if (primaryInEar || secondaryInEar)
   {
     LOG_INFO("At least one AirPod is in ear");
-    activateA2dpProfile();
+    setAudioWanted(true);
 
     // Resume if conditions are met and we previously paused
     if (shouldResume && !pausedByAppServices.isEmpty() && isActiveOutputDeviceAirPods())
@@ -73,7 +78,7 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
   else
   {
     LOG_INFO("Both AirPods are out of ear");
-    removeAudioOutputDevice();
+    setAudioWanted(false);
   }
 }
 
@@ -239,6 +244,35 @@ void MediaController::removeAudioOutputDevice() {
   if (!m_pulseAudio->setCardProfile(m_deviceOutputName, "off")) {
     LOG_ERROR("Failed to remove AirPods as audio output device");
   }
+}
+
+void MediaController::setAudioWanted(bool want) {
+  m_wantAudio = want;
+  m_cardRetries = 0;
+  applyAudioRoute();
+}
+
+void MediaController::applyAudioRoute() {
+  if (m_deviceOutputName.isEmpty() && !connectedDeviceMacAddress.isEmpty()) {
+    m_deviceOutputName = m_pulseAudio->getCardNameForDevice(connectedDeviceMacAddress);
+  }
+  if (m_deviceOutputName.isEmpty()) {
+    if (connectedDeviceMacAddress.isEmpty() || ++m_cardRetries > 15) {
+      m_cardRetryTimer->stop();
+      return;
+    }
+    if (!m_cardRetryTimer->isActive()) {
+      LOG_DEBUG("Bluetooth card not there yet, retrying");
+      m_cardRetryTimer->start();
+    }
+    return;
+  }
+  m_cardRetryTimer->stop();
+
+  if (m_wantAudio)
+    activateA2dpProfile();
+  else
+    removeAudioOutputDevice();
 }
 
 void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
